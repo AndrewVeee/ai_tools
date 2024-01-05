@@ -2,7 +2,7 @@ from datetime import datetime
 import os
 import sys
 
-from ai_tools import context_manager as cm
+import context_manager as cm
 from openai import OpenAI
 
 api_key = os.environ.get('API_KEY', 'no_key')
