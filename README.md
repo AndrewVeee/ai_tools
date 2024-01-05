@@ -10,7 +10,7 @@ This is a very early release with some basic functions.
 
 ContextManager is a small tool to add chat history and external data to a chatbot.
 
-See examples/chat-history.py for an example.
+See chat_history.py for an example.
 
 ## PromptFormatter: Format messages for specific prompt templates.
 
