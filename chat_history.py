@@ -29,8 +29,9 @@ def chat_stream(messages, **kwargs):
     if chunk.choices[0].delta.content is not None:
       yield chunk.choices[0].delta.content
 
-ctx = cm.ContextManager(max_tokens=1024, ranker=cm.SimpleRanker().rank)
-ctx.add_dynamic('dt', 'current date and time', fn=lambda: "Current Date and Time: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+ctx = cm.ContextManager(max_tokens=1024, last_messages=4, ranker=cm.SimpleRanker().rank)
+ctx.add_dynamic('dt', 'current date and time',
+    fn=lambda: datetime.now().strftime("Current Date: %Y-%m-%d, Current Time: %I:%M%P"))
 ctx.add_dynamic('content-ex', 'ContextManager chat history example', content="This is an example of using ContextManager for a simple chat with history.")
 
 system_message = "You're an intelligent, sarcastic spy named Lana Kane, helping your new partner."
@@ -62,7 +63,7 @@ while True:
   msgs = ctx.generate_messages()
   last_messages = msgs
   res = ''
-  for chunk in chat_stream(msgs, temperature=0.4):
+  for chunk in chat_stream(msgs, temperature=0.6):
     res += chunk
     sys.stdout.write(chunk)
     sys.stdout.flush()
