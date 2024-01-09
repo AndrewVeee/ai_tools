@@ -58,12 +58,14 @@ class ContextManager:
     self.request_text = ''
 
     # Max context size
-    self.max_tokens = kwargs['max_tokens'] if 'max_tokens' in kwargs else 1024
+    self.max_tokens = self.get_opt(kwargs, 'max_tokens', 1024)
     # Function to count tokens
-    self.token_counter = kwargs['token_counter'] if 'token_counter' in kwargs else self.count_tokens
+    self.token_counter = self.get_opt(kwargs, 'token_counter', self.count_tokens)
     # Function to rank items
-    self.ranker = kwargs['ranker'] if 'ranker' in kwargs else NoRanker().rank
- 
+    self.ranker = self.get_opt(kwargs, 'ranker', NoRanker().rank)
+    # Number of past messages to try to include in context
+    self.last_messages = self.get_opt(kwargs, 'last_messages', 4)
+
     # Allow overriding role names
     self.role_map = {
       Roles.user: 'user',
@@ -75,7 +77,12 @@ class ContextManager:
     # Scores 0 and lower will be dropped
     self.dynamic_score = 0 # Dynamic data can be dropped
     self.ephemeral_score = 1 # Ephemeral data related to the current task should be included if possible
-    self.message_score = 1.5 # Chat history is slightly more important than ephemeral data
+    self.message_score = 0 # Chat history is slightly more important than ephemeral data
+
+  def get_opt(self, opts, name, default=None):
+    if name in opts:
+      return opts[name]
+    return default
 
   # Generic token counter if none provided.
   def count_tokens(self, content):
@@ -148,7 +155,7 @@ class ContextManager:
       return item['obj'].message
     return None
 
-  def generate_message_list(self, sorted_map):
+  def generate_message_list(self, sorted_map, past_messages):
     messages = []
     # TODO: Keep message history in order
     for item in sorted_map:
@@ -164,6 +171,8 @@ class ContextManager:
         role = Roles.system
         msg = item['obj']['content']
       messages.append({'role': self.role_map[role], 'content': msg})
+    for msg in past_messages:
+      messages.append({'role': self.role_map[msg.role], 'content': msg.message})
     for req in self.requests:
       messages.append({'role': self.role_map[req['role']], 'content': req['content']})
     return messages
@@ -171,6 +180,7 @@ class ContextManager:
   def generate_messages(self):
     req = self.requests[-1]
     token_count = 0
+
     # Generate a list with all content and a map of each index to it's type/obj
     msg_content, msg_map = self.gen_message_map()
     # Rank the content and apply the scores
@@ -182,12 +192,25 @@ class ContextManager:
     for req in self.requests:
       token_count += self.token_counter(req['content'])
 
+    # Include previous messages up to last_messages if they fit in the context
+    last_messages = []
+    for i in range(self.last_messages):
+      if i + 1 > len(self.messages):
+        break
+      msg = self.messages[-i]
+      msg_tokens = self.token_counter(msg.message)
+      if token_count + msg_tokens <= self.max_tokens:
+        token_count += msg_tokens
+        last_messages.append(msg)
+
     # Sort map by score and determine which items can be included
     sorted_map = sorted(msg_map, key=lambda msg_idx: msg_map[msg_idx]['score'], reverse=True)  
     sorted_map = [msg_map[idx] for idx in sorted_map]
 
     # Decide which other items to include. Based on score, up to max_tokens.
     for item in sorted_map:
+      if item['obj'] in last_messages:
+        continue
       content = self.get_item_content(item)
       tokens = self.token_counter(content)
       if token_count + tokens <= self.max_tokens:
@@ -201,4 +224,4 @@ class ContextManager:
         item['include'] = True
 
     # Generate the full message list
-    return self.generate_message_list(sorted_map)
+    return self.generate_message_list(sorted_map, last_messages)
